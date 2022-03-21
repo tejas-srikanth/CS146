@@ -12,7 +12,7 @@
                              (lambda () (error "undefined variable " psymbol))))
     (cond
       [(= rec-depth num-psyms) (error "circular reference involving " psymbol)]
-      [(number? val-ps) val-ps]
+      [(or (number? val-ps) (boolean? val-ps)) val-ps]
       [else
        (begin
          (define newval (resolve-const-chain val-ps (add1 rec-depth) num-psyms))
@@ -24,11 +24,6 @@
   (hash-for-each const-ht
                  (lambda (psym val)
                          (resolve-const-chain psym 0 num-psyms))))
-
-
-(define (modified-hash-ref hash key)
-  (define a (hash-ref ps-ht key false))
-  (not (boolean? a)))
 
 (define (populate-hash p-code)
   (define (ph-h primp-code pc num-consts)
@@ -66,7 +61,8 @@
                                                                (hash-set! ps-ht var pc)
                                                                (hash-set! data-ht var pc)
                                                                (ph-h (rest primp-code) (+ data-len pc) num-consts)]
-                                   [else (error "duplicate key " var)]))])]))
+                                   [else (error "duplicate key " var)]))]
+      [_ (ph-h (rest primp-code) (add1 pc) num-consts)])]))
   (ph-h p-code 0 0))
                                    
                                    
