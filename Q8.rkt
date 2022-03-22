@@ -103,23 +103,23 @@
     (define curr-inst (first primp-code))
     (match curr-inst
       [(list 'const var val) (begin
-                               (define lookup (hash-ref ps-ht var 'not-found))
+                               (define lookup (hash-ref ps-ht var "not-found"))
                                (cond
-                                 [(equal? lookup 'not-found) (hash-set! ps-ht var val) ; add it to ps-ht
+                                 [(equal? lookup "not-found") (hash-set! ps-ht var val) ; add it to ps-ht
                                                              (hash-set! const-ht var val) ;add it to const-ht
                                                              (ph-h (rest primp-code) (add1 pc) (add1 num-consts))]
                                  [else (error "duplicate key " var)]))] ; key found in ps-ht, error out
       [(list 'label var) (begin
                            (define lookup (hash-ref ps-ht var 'not-found))
                            (cond
-                             [(equal? lookup 'not-found) (hash-set! ps-ht var pc)
+                             [(equal? lookup "not-found") (hash-set! ps-ht var pc)
                                                         (hash-set! label-ht var pc) ; add to label-ht
                                                         (ph-h (rest primp-code) pc num-consts)] ; no need to increment pc
                              [else (error "duplicate key " var)]))]
       [(list 'data var (list repeat el)) (begin
                                            (define lookup (hash-ref ps-ht var 'not-found))
                                            (cond
-                                             [(equal? lookup 'not-found) (hash-set! ps-ht var pc)
+                                             [(equal? lookup "not-found") (hash-set! ps-ht var pc)
                                                                          (hash-set! data-ht var pc) ; add to data-ht
                                                                          (ph-h (rest primp-code) (+ pc repeat) num-consts)] ; increment pc by repeat
                                                                                                                             ; as that's the index of next instruction in vector
@@ -128,7 +128,7 @@
       [(list 'data var val ...) (begin
                                  (define lookup (hash-ref ps-ht var 'not-found))
                                  (cond
-                                   [(equal? lookup 'not-found) (define data-len (length val))
+                                   [(equal? lookup "not-found") (define data-len (length val))
                                                                (hash-set! ps-ht var pc)
                                                                (hash-set! data-ht var pc)
                                                                (ph-h (rest primp-code) (+ data-len pc) num-consts)] ; increment pc by the amount of data
