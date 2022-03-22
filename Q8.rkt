@@ -5,15 +5,6 @@
 (define label-ht (make-hash)) ; hashtable for labels
 (define data-ht (make-hash)) ; hashtable for data
 
-(define pcode
-  '(
-    (const X Y)
-    (data Y 1 1 2)
-    (label Z)
-    (const E Z)
-    (const A X)
-    ))
-
 ; (assembler-first-pass pcode)
 ; takes in A-PRIMPL code
 ; mutates the const-ht, data-ht, label-ht so that
@@ -42,7 +33,17 @@
   (define num-consts (populate-hash pcode))
   (resolve-all-consts (+ 2 num-consts)))
 
-(assembler-first-pass pcode)
+; sample A-PRIMPL code
+(define apcode
+  '(
+    (const X Y)
+    (data Y 1 1 2)
+    (label Z)
+    (const E Z)
+    (const A X)
+    ))
+
+(assembler-first-pass apcode)
 
 (print-ht ps-ht)
 (printf "\n")
