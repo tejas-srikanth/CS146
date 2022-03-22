@@ -5,6 +5,53 @@
 (define label-ht (make-hash)) ; hashtable for labels
 (define data-ht (make-hash)) ; hashtable for data
 
+(define pcode
+  '(
+    (const X Y)
+    (data Y 1 1 2)
+    (label Z)
+    (const E Z)
+    (const A X)
+    ))
+
+; (assembler-first-pass pcode)
+; takes in A-PRIMPL code
+; mutates the const-ht, data-ht, label-ht so that
+; all consts, data, and labels
+; are stored in their respective hashtables
+; and all resolve to immediate values
+; Ex:
+; A call on (assembler-first-pass '(
+;(const 'X 'Y)   [0]
+;(data 'Y 1 1 2) [1, 2, 3]
+;(label 'Z)      [4]
+;(const 'E 'Z)   [5]
+;(const 'A 'X)   [6]
+;)
+
+; Results in:
+; ps-ht:
+; { 'A: 1, 'X: 1, 'Y: 1, 'Z: 4, 'E: 4 }
+; const-ht:
+; { 'A: 1, 'X: 1, 'E: 4 }
+; data-ht:
+; { 'Y: 1 }
+; const-ht
+; { 'Z: 4 }
+(define (assembler-first-pass pcode)
+  (define num-consts (populate-hash pcode))
+  (resolve-all-consts (+ 2 num-consts)))
+
+(assembler-first-pass pcode)
+
+(print-ht ps-ht)
+(printf "\n")
+(print-ht const-ht)
+(printf "\n")
+(print-ht data-ht)
+(printf "\n")
+(print-ht label-ht)
+
 ; (resolve-const-chain psymbol rec-depth num-psyms)
 ; psymbol is the first psymbol in the chain of declarations
 ; rec-depth is the recursive depth of the function
@@ -143,51 +190,4 @@
                    (printf "~a ~a\n" psym val))))
       
 
-
-(define pcode
-  '(
-    (const X Y)
-    (data Y 1 1 2)
-    (label Z)
-    (const E Z)
-    (const A X)
-    ))
-
-; (assembler-first-pass pcode)
-; takes in A-PRIMPL code
-; mutates the const-ht, data-ht, label-ht so that
-; all consts, data, and labels
-; are stored in their respective hashtables
-; and all resolve to immediate values
-; Ex:
-; A call on (assembler-first-pass '(
-;(const 'X 'Y)   [0]
-;(data 'Y 1 1 2) [1, 2, 3]
-;(label 'Z)      [4]
-;(const 'E 'Z)   [5]
-;(const 'A 'X)   [6]
-;)
-
-; Results in:
-; ps-ht:
-; { 'A: 1, 'X: 1, 'Y: 1, 'Z: 4, 'E: 4 }
-; const-ht:
-; { 'A: 1, 'X: 1, 'E: 4 }
-; data-ht:
-; { 'Y: 1 }
-; const-ht
-; { 'Z: 4 }
-
-(define (assembler-first-pass pcode)
-  (define num-consts (populate-hash pcode))
-  (resolve-all-consts (+ 2 num-consts))) 
-  
-(assembler-first-pass pcode)
-
-(print-ht ps-ht)
-(printf "\n")
-(print-ht const-ht)
-(printf "\n")
-(print-ht data-ht)
-(printf "\n")
-(print-ht label-ht)
+ 
