@@ -78,6 +78,23 @@
 ; where pc is the current index of the program
 ; Finally, if it's (data var val...), or (data var (repeat el)), store
 ; (var, pc) in data-ht and ps-ht
+; Ex:
+; A call on (populate-hash '(
+;(const 'X 'Y)   [0]
+;(data 'Y 1 1 2) [1, 2, 3]
+;(label 'Z)      [4]
+;(const 'E 'Z)   [5]
+;(const 'A 'X)   [6]
+;)
+; Results in:
+; ps-ht:
+; { 'A: 'X, 'X: 'Y, 'Y: 1, 'Z: 2, 'E: 'Z }
+; const-ht:
+; { 'A: 'X, 'X: 'Y, 'E: 'Z }
+; data-ht:
+; { 'Y: 1 }
+; const-ht
+; { 'Z: 4 }
 (define (populate-hash p-code)
   (define (ph-h primp-code pc num-consts)
     (cond
@@ -129,12 +146,11 @@
 
 (define pcode
   '(
-    (const A B)
-    (const B C)
-    (const C D)
-    (data D 4 5 6 7)
-    (label X)
-    (const E X)
+    (const X Y)
+    (data Y 1 1 2)
+    (label Z)
+    (const E Z)
+    (const A X)
     ))
 
 ; (assembler-first-pass pcode)
@@ -143,6 +159,25 @@
 ; all consts, data, and labels
 ; are stored in their respective hashtables
 ; and all resolve to immediate values
+; Ex:
+; A call on (assembler-first-pass '(
+;(const 'X 'Y)   [0]
+;(data 'Y 1 1 2) [1, 2, 3]
+;(label 'Z)      [4]
+;(const 'E 'Z)   [5]
+;(const 'A 'X)   [6]
+;)
+
+; Results in:
+; ps-ht:
+; { 'A: 1, 'X: 1, 'Y: 1, 'Z: 4, 'E: 4 }
+; const-ht:
+; { 'A: 1, 'X: 1, 'E: 4 }
+; data-ht:
+; { 'Y: 1 }
+; const-ht
+; { 'Z: 4 }
+
 (define (assembler-first-pass pcode)
   (define num-consts (populate-hash pcode))
   (resolve-all-consts (+ 2 num-consts))) 
