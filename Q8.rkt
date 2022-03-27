@@ -1,194 +1,278 @@
 #lang racket
-;GLOBAL HASHTABLES
-(define ps-ht (make-hash)) ; hashtable for all psymbols
-(define const-ht (make-hash)) ; hashtable for consts
-(define label-ht (make-hash)) ; hashtable for labels
-(define data-ht (make-hash)) ; hashtable for data
+; CS146 - Q8: A-PRIMPL to PRIMPL
+; Winter 22
+;
+; writing an assembler
 
-; (assembler-first-pass pcode)
-; takes in A-PRIMPL code
-; mutates the const-ht, data-ht, label-ht so that
-; all consts, data, and labels
-; are stored in their respective hashtables
-; and all resolve to immediate values
-; Ex:
-; A call on (assembler-first-pass '(
-;(const 'X 'Y)   [0]
-;(data 'Y 1 1 2) [1, 2, 3]
-;(label 'Z)      [4]
-;(const 'E 'Z)   [5]
-;(const 'A 'X)   [6]
-;)
+;; Currently nets 15/17
+;; known issues:
+;;  - circular const definitions
 
-; Results in:
-; ps-ht:
-; { 'A: 1, 'X: 1, 'Y: 1, 'Z: 4, 'E: 4 }
-; const-ht:
-; { 'A: 1, 'X: 1, 'E: 4 }
-; data-ht:
-; { 'Y: 1 }
-; const-ht
-; { 'Z: 4 }
-(define (assembler-first-pass pcode)
-  (define num-consts (populate-hash pcode))
-  (resolve-all-consts (+ 2 num-consts)))
+;;~~~~~~PROGRAM~~~~~~;;
+;; Structs for the various psymbol types
+(struct data (index) #:transparent)
+(struct const (value) #:transparent)
+(struct label (index) #:transparent)
 
-; sample A-PRIMPL code
-(define apcode
+(define (primpl-assemble aPrimpInstr)
+  (define (assemble-h primpInstr)
+    (hash-clear! psHash)
+    primpInstr)
+  (first-pass aPrimpInstr)
+  (assemble-h (second-pass aPrimpInstr)))
+
+(define psHash (make-hash)) ;; The psymbol hash-table
+
+(define (first-pass aPrimpInstr)
+  (populate-table aPrimpInstr)
+  (resolve-table))
+
+(define (populate-table aPrimpInstr)
+  (define (populate-table-h aPrimp index)
+    (cond
+      [(empty? aPrimp) (void)]
+      [else
+       (match (first aPrimp)
+         [`(const ,psymb ,psymbOrVal) (begin (define lookupPsymb (hash-ref psHash psymb 'notFound))
+                                             (define newVal (const psymbOrVal))
+                                             (cond
+                                               [(eq? 'notFound lookupPsymb)
+                                                (hash-set! psHash psymb newVal)
+                                                (populate-table-h (rest aPrimp) index)] ; no need to increment index
+                                               [else (error "duplicate key: " psymb)]))]
+         [`(label ,psymb) (begin (define lookupPsymb (hash-ref psHash psymb 'notFound))
+                                 (define newVal (label index))
+                                 (cond
+                                   [(eq? 'notFound lookupPsymb)
+                                    (hash-set! psHash psymb newVal)
+                                    (populate-table-h (rest aPrimp) index)] ; no need to increment index
+                                   [else (error "duplicate key: " psymb)]))]
+         [`(data ,psymb (,nat ,psymbOrVal)) (begin (define lookupPsymb (hash-ref psHash psymb 'notFound))
+                                                   (define newVal (data index))
+                                                   (cond
+                                                     [(eq? 'notFound lookupPsymb)
+                                                      (hash-set! psHash psymb newVal)
+                                                      (populate-table-h (rest aPrimp) (+ index nat))]; since the are nat # of values, increase index by nat
+                                                     [else (error "duplicate key: " psymb)]))]
+         [`(data ,psymb ,psymbOrVal ...) (begin (define lookupPsymb (hash-ref psHash psymb 'notFound))
+                                                (define newVal (data index))
+                                                (cond
+                                                  [(eq? 'notFound lookupPsymb)
+                                                   (hash-set! psHash psymb newVal)
+                                                   (populate-table-h (rest aPrimp) (+ index (length psymbOrVal)))]
+                                                  [else (error "duplicate key: " psymb)]))]
+         [_ (populate-table-h (rest aPrimp) (add1 index))]
+         )]))
+  (populate-table-h aPrimpInstr 0))
+
+(define (resolve-table)
+  (define (get-val val)
+    (cond
+      [(const? val) (const-value val)]
+      [(data? val) (data-index val)]
+      [(label? val) (label-index val)]))
+  (define (resolve-table-init key val)
+    (cond
+      [(const? val) (cond
+                      [(symbol? (const-value val))
+                       (define psymb (const-value val))
+                       (hash-set! psHash key (const (resolve-table-init psymb (hash-ref psHash psymb (λ () (error "undefined psymb: " psymb))))))
+                       (get-val (hash-ref psHash psymb))]
+                      [else (const-value val)])]
+      [(data? val) (data-index val)]
+      [(label? val) (label-index val)]
+      [else (error "unexpeted psymbol type in table: " val)]))
+  (hash-for-each psHash resolve-table-init)
+  )
+
+(define (second-pass aPrimpInstr)
+  (define (second-pass-helper aPrimp primpInstr)
+    (cond
+      [(empty? aPrimp) primpInstr]
+      [else 
+       (define curr (first aPrimp))
+       (match curr
+         [`(halt) (second-pass-helper (rest aPrimp) (cons 0 primpInstr))]
+         [`(lit ,psymbOrVal) (second-pass-helper (rest aPrimp) (cons (produce-lit psymbOrVal) primpInstr))]
+         [`(const ,name ,val) (second-pass-helper (rest aPrimp) primpInstr)] ; no need to add anything to the output
+         [`(data ,name (,nat ,val)) (second-pass-helper (rest aPrimp)
+                                                        (append (build-list nat (λ (x) (produce-lit val))) primpInstr))]
+         [`(data ,name ,val ...) (second-pass-helper (rest aPrimp)
+                                                     (append (foldl (λ (x y) (cons (produce-lit x) y)) empty val) primpInstr))]
+         [`(label ,name) (second-pass-helper (rest aPrimp) primpInstr)]
+         [`(jump ,loc) (second-pass-helper (rest aPrimp)
+                                           (cons (list 'jump (produce-jb-loc loc)) primpInstr))]
+         [`(branch ,opd ,loc) (second-pass-helper (rest aPrimp)
+                                                  (cons (list 'branch (produce-opd opd) (produce-jb-loc loc))
+                                                        primpInstr))]
+         [`(print-val ,opd) (second-pass-helper (rest aPrimp)
+                                                (cons (list 'print-val (produce-opd opd)) primpInstr))]
+         [`(print-string ,str) (second-pass-helper (rest aPrimp)
+                                                   (cons (list 'print-string str) primpInstr))]
+         [`(,op ,dest ,opd1 ,opd2) (second-pass-helper (rest aPrimp) ;; Binary operations
+                                                       (cons (list op (produce-dest dest) (produce-opd opd1) (produce-opd opd2)) primpInstr))]
+         [`(,op ,dest ,opd) (second-pass-helper (rest aPrimp) ;; Unary operations
+                                                (cons (list op (produce-dest dest) (produce-opd opd)) primpInstr))])]))
+  (define (produce-indexed-access imm ind)
+    (define (process-imm im)
+      (match im
+        [(? symbol? im) (define lookup (hash-ref psHash im (λ () (error "undefined psymb: " im))))
+                        (cond
+                          [(data? lookup) (data-index lookup)]
+                          [(const? lookup) (const-value lookup)]
+                          [(label? lookup) (error "incorrect use of label: " im lookup)]
+                          [else (error "process-imm symbol")])]
+        [im im])) ;; assuming there is a non-psymb imm here
+    (define (process-ind in)
+      (match in
+        [(? symbol? in) (define lookup (hash-ref psHash in (λ () (error "undefined psymb: " in))))
+                        (cond
+                          [(data? lookup) (list (data-index lookup))]
+                          [(const? lookup) (error "incorrect use of const: " in lookup)]
+                          [(label? lookup) (error "incorrect use of label: " in lookup)]
+                          [else (error "produce-ind symbol")])]
+        [in in])) ;; assuming there is a non-psymb ind value here
+    (list (process-imm imm) (process-ind ind)))
+  (define (produce-dest val)
+    (match val
+      [`(,imm ,ind) (produce-indexed-access imm ind)]
+      [(? symbol? v) (define lookup (hash-ref psHash v (λ () (error "undefined psymb: " v))))
+                     (cond
+                       [(data? lookup) (list (data-index lookup))]
+                       [(const? lookup) (error "incorrect use of const: " v lookup)]
+                       [(label? lookup) (error "incorrect use of label: " v lookup)]
+                       [else (error "produce-opd symbol")])]
+      [val val]))
+  (define (produce-opd val)
+    (match val
+      [`(,imm ,ind) (produce-indexed-access imm ind)]
+      [(? symbol? v) (define lookup (hash-ref psHash v (λ () (error "undefined psymb: " v))))
+                     (cond
+                       [(data? lookup) (list (data-index lookup))]
+                       [(const? lookup) (const-value lookup)]
+                       [(label? lookup) (error "incorrect use of label: " v lookup)]
+                       [else (error "produce-opd symbol")])]
+      [val val]))
+  (define (produce-lit psymbOrVal) ; processes pseudo-instr arguments
+    (cond
+      [(symbol? psymbOrVal) ; if a symbol, check the psHash
+       (define lookup (hash-ref psHash psymbOrVal (λ () (error "undefined psymb: " psymbOrVal))))
+       (cond
+         [(data? lookup) (data-index lookup)]
+         [(const? lookup) (const-value lookup)]
+         [(label? lookup) (label-index lookup)]
+         [else (error "produce-lit symbol")])]
+      [else psymbOrVal])) ; if not a symbol, assume it's a valid type
+  (define (produce-jb-loc val) ; processes jump/branch targets
+    (cond
+      [(symbol? val) ;; special conditions for jump/branch target psymbols
+       (define lookup (hash-ref psHash val (λ () (error "undefined psymb: " val))))
+       (cond 
+         [(label? lookup) (label-index lookup)]
+         [(data? lookup) (list (data-index lookup))] ;; data and const treated as indirects
+         [(const? lookup) (list (const-value lookup))]
+         [else (error "produce-jb-loc symbol")])]
+      [else (produce-opd val)] ;; otherwise, produce opd as usual (psymb cases already covered)
+      ))
+  (reverse (second-pass-helper aPrimpInstr empty))
+  )
+;;~~~~~~END-PROGRAM~~~~~~;;
+
+;;~~~~~~~~~~~TESTING~~~~~~~~~~~;;
+;; Test cases
+(define test-code
   '(
-    (const X Y)
-    (data Y 1 1 2)
-    (label Z)
-    (const E Z)
     (const A X)
+    (label B)
+    (lit 1)
+    (data D 1 2 3 4)
+    (data C (3 1))
     ))
 
-(assembler-first-pass apcode)
+(define test-code-2
+  '(
+    (lit 0)
+    (data A 2)
+    (data B (5 A))
+    (data D 3 4)
+    (halt)
+    ))
 
-(print-ht ps-ht)
-(printf "\n")
-(print-ht const-ht)
-(printf "\n")
-(print-ht data-ht)
-(printf "\n")
-(print-ht label-ht)
+(define test-code-3
+  '(
+    (const A 2)
+    (data B 0)
+    (add B (5) A)
+    (mul (1) 2 (1))
+    (halt)
+    ))
 
-; (resolve-const-chain psymbol rec-depth num-psyms)
-; psymbol is the first psymbol in the chain of declarations
-; rec-depth is the recursive depth of the function
-; num-psyms is the number of constants + 2
+(define test-code-4
+  '(
+    (data X 1)
+    (add X (X X) (2 X))
+    ))
 
-; mutates the ps-ht and the const-ht so that each
-; const in a certain chain of const declarations
-; is associated with an immediate value (ie a number
-; or a boolean). Gives an error if variable is undefined
-; or there is a circular reference
-; Ex:
-; ps-ht:
-; { 'A: 2, 'E: 4, 'B: 'A, 'C: 'B, 'D: 'E }
-; const-ht:
-; { 'B: 'A, 'C: 'B, 'D: 'E }
-; NOTE: in this case, the chain of const declarations is
-; C -> B -> A
-; (resolve-const-chain 'B 0 5)
-; ps-ht:
-; { 'A: 2, 'B: 2, 'C: 2, 'D: 'E }
-; const-ht:
-; { 'B: 2, 'C: 2, 'D: 'E }
-; NOTE: 'D is not resolved as it's not in the const chain involving
-; 'B
-(define (resolve-const-chain psymbol rec-depth num-psyms)
-    (define val-ps (hash-ref ps-ht
-                             psymbol
-                             (lambda () (error "undefined variable " psymbol))))
-    (cond
-      [(= rec-depth num-psyms) (error "circular reference involving " psymbol)] ; more calls than constants, must be a circular reference
-      [(or (number? val-ps) (boolean? val-ps)) val-ps] ; value is immediate
-      [else
-       (begin
-         (define newval (resolve-const-chain val-ps (add1 rec-depth) num-psyms)) ; resolve other consts in the chain
-         (hash-set! ps-ht psymbol newval) ; mutate ps-ht and const-ht using the new value
-         (hash-set! const-ht psymbol newval)
-         newval)])); return the new value
+(define test-code-5
+  '(
+    (data B #true)
+    (label A)
+    (add (0) 1 1)
+    (jump A)
+    (branch B A)
+    (print-val B)
+    ))
 
-; (resolve-all-consts num-psyms)
-; num-psyms is the number of initialized consts + 2
-; resolves all const chains, mutates ps-ht and const-ht
-; so that each psymbol is resolved to an immediate value
-; and not another psymbol
-; Ex:
-; ps-ht:
-; { 'A: 2, 'E: 4, 'B: 'A, 'C: 'B, 'D: 'E }
-; const-ht:
-; { 'B: 'A, 'C: 'B, 'D: 'E }
-; (resolve-const-chain 5)
-; ps-ht:
-; ; { 'A: 2, 'E: 4, 'B: 2, 'C: 2, 'D: 4 }
-; const-ht:
-; { 'B: 2, 'C: 2, 'D: 4 }
-(define (resolve-all-consts num-psyms)
-  (hash-for-each const-ht; iterate through the hashtable
-                 (lambda (psym val)
-                         (resolve-const-chain psym 0 num-psyms)))) ; resolve every const chain
-; (populate-hah p-code)
-; p-code is a list of a-primpl code
-; pc is the current index of where we would be in the primpl
-; vector
-; num-consts is the number of defined constants, this
-; will be what the function returns
-
-; goes through A-primpl code and looks for consts
-; data, and labels
-; if it's (const var val):
-;   if the psymbol hasn't been defined, add (key, val)=(var, val) to
-;   ps-ht and const-ht and continue
-; Similar if it's (label var) except add (key, pc) to label-ht and ps-ht
-; where pc is the current index of the program
-; Finally, if it's (data var val...), or (data var (repeat el)), store
-; (var, pc) in data-ht and ps-ht
-; Ex:
-; A call on (populate-hash '(
-;(const 'X 'Y)   [0]
-;(data 'Y 1 1 2) [1, 2, 3]
-;(label 'Z)      [4]
-;(const 'E 'Z)   [5]
-;(const 'A 'X)   [6]
-;)
-; Results in:
-; ps-ht:
-; { 'A: 'X, 'X: 'Y, 'Y: 1, 'Z: 2, 'E: 'Z }
-; const-ht:
-; { 'A: 'X, 'X: 'Y, 'E: 'Z }
-; data-ht:
-; { 'Y: 1 }
-; const-ht
-; { 'Z: 4 }
-(define (populate-hash p-code)
-  (define (ph-h primp-code pc num-consts)
-    (cond
-    [(empty? primp-code) num-consts]
-    [else
-    (define curr-inst (first primp-code))
-    (match curr-inst
-      [(list 'const var val) (begin
-                               (define lookup (hash-ref ps-ht var "not-found"))
-                               (cond
-                                 [(equal? lookup "not-found") (hash-set! ps-ht var val) ; add it to ps-ht
-                                                             (hash-set! const-ht var val) ;add it to const-ht
-                                                             (ph-h (rest primp-code) (add1 pc) (add1 num-consts))]
-                                 [else (error "duplicate key " var)]))] ; key found in ps-ht, error out
-      [(list 'label var) (begin
-                           (define lookup (hash-ref ps-ht var 'not-found))
-                           (cond
-                             [(equal? lookup "not-found") (hash-set! ps-ht var pc)
-                                                        (hash-set! label-ht var pc) ; add to label-ht
-                                                        (ph-h (rest primp-code) pc num-consts)] ; no need to increment pc
-                             [else (error "duplicate key " var)]))]
-      [(list 'data var (list repeat el)) (begin
-                                           (define lookup (hash-ref ps-ht var 'not-found))
-                                           (cond
-                                             [(equal? lookup "not-found") (hash-set! ps-ht var pc)
-                                                                         (hash-set! data-ht var pc) ; add to data-ht
-                                                                         (ph-h (rest primp-code) (+ pc repeat) num-consts)] ; increment pc by repeat
-                                                                                                                            ; as that's the index of next instruction in vector
-                                             [else (error "duplicate key " var)]))]
-
-      [(list 'data var val ...) (begin
-                                 (define lookup (hash-ref ps-ht var 'not-found))
-                                 (cond
-                                   [(equal? lookup "not-found") (define data-len (length val))
-                                                               (hash-set! ps-ht var pc)
-                                                               (hash-set! data-ht var pc)
-                                                               (ph-h (rest primp-code) (+ data-len pc) num-consts)] ; increment pc by the amount of data
-                                   [else (error "duplicate key " var)]))]
-      [_ (ph-h (rest primp-code) (add1 pc) num-consts)])])) ; otherwise continue
-  (ph-h p-code 0 0))
-                                   
-; tester function, prints hashtable                                   
+;; Print ht
 (define (print-ht ht)
-  (hash-for-each ht
-                 (lambda (psym val)
-                   (printf "~a ~a\n" psym val))))
-      
+  (hash-for-each ht (λ (psymb val) (printf "~a ~a\n" psymb val))))
+  
+;; Individual testing
+;(print-ht psHash)
+;(populate-table test-code-2)
+;(print-ht psHash)
+;(newline)
 
- 
+;(resolve-table)
+;(print-ht psHash)
+
+;(second-pass test-code-2)
+
+
+
+
+; Final function testing
+;(primpl-assemble test-code-5)
+
+
+;;~~~~~~~~~~~END-TESTING~~~~~~~~~~~;;
+
+
+;;~~~~~~~~~~~NOTES~~~~~~~~~~~;;
+; labels are only allowed to be used in:
+;  - jump
+;  - branch
+;  - const
+;  - data
+;  - lit
+; Note, it is always used as an immediate
+
+; Jump and Branch locations:
+; - labels treated as imm
+; - const and data treated as ind
+; - other opnds as normal
+
+; Data:
+; Treated as imm:
+; - in data instructions
+; - in const instructions
+; - in lit
+; - in first position of indexed access
+; Treated as ind:
+; - everywhere else
+
+; Const:
+; Treated as ind:
+; - jump and branch targets
+; Treated as imm:
+; everywhere else
