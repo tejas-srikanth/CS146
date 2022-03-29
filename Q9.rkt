@@ -28,7 +28,7 @@
                                            )]
     [(equal? (first aexp) 'not) (append
                                  (translate-binexp (second aexp))
-                                 '(lnot (0 SP) (0 SP)))]
+                                 (list '(lnot (0 SP) (0 SP))))]
     [else (append
            (translate-binexp (second aexp))
            
@@ -104,7 +104,7 @@
     (list 'label label2-gen))))
 
 (define (translate-skip stmt)
-  empty)
+  (list (list 'print-string "")))
 
 (define (translate-seq stmt)
   (define actual-code (rest stmt))
@@ -112,16 +112,13 @@
    (compile-simpl-helper (list (first actual-code)))
   (compile-simpl-helper (rest actual-code))))
 
-(define a '
-(vars [(x 2) (y 0)]
-      (seq
-       (while (< y x)
-              (print y)
-              (print "\n"))
-       (print "done"))
-
-      )
-  )
+;(define a '
+;(vars [(y #t) (x 4)]
+;      (while (not (or (not (not (= x 0))) y))
+;            (print x)
+;            (set x (- x 1)))
+;  )
+;  )
 
 (define (compile-simpl-helper lst)
   (cond
@@ -146,7 +143,7 @@
                                          (translate-iif (first lst))
                                          (compile-simpl-helper (rest lst)))]
     [(equal? (first (first lst)) 'skip) (append
-                                         empty
+                                         (translate-skip (first lst))
                                          (compile-simpl-helper (rest lst)))]))
              
   
@@ -155,8 +152,8 @@
   (define len-a (length a-ap))
   (append a-ap (list (list 'data 'SP (add1 len-a)))))
 
-(define aprimp-code (compile-simpl a))
-aprimp-code
+;(define aprimp-code (compile-simpl a))
+;aprimp-code
 
 ;((while (<= inner outer) (iif (= (mod inner 2) (* x 0)) (seq (print outer) (print  ) (print inner) (print 
 ;)) (print inner is odd
