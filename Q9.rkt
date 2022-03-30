@@ -50,7 +50,7 @@
                                                 (compile-helper (rest simpl)))]
             [`(skip) (compile-helper (rest simpl))]
             [`(while ,bexp ,stmt ...) (append (translate-while bexp stmt)
-                                            (compile-helper (rest simpl)))]
+                                              (compile-helper (rest simpl)))]
             )]
     )
   )
@@ -119,8 +119,7 @@
           (list (list 'jump l0))
           (list (list 'label l2))
           ))
-          
-  
+
 
 ;; Operator translator
 (define (opTrans op)
@@ -135,6 +134,8 @@
     ['< 'lt]
     ['>= 'ge]
     ['<= 'le]
+    ['and 'land]
+    ['or 'lor]
     ))
 
 ;; Processing a-expressions
@@ -182,8 +183,8 @@
     [`(not ,bexp) (define bexpCode (process-bexp bexp))
                   (append
                    bexpCode
-                   (list (list 'lnot '(0 SP) '(0 SP))))]
-    [(list (or `and `or) bexp1 bexp2) (define op (first bexpIn))
+                   (list '(lnot (0 SP) (0 SP))))]
+    [(list (or `and `or) bexp1 bexp2) (define op (opTrans (first bexpIn)))
                                       (define bexp1Code (process-bexp bexp1))
                                       (define bexp2Code (process-bexp bexp2))
                                       (append
@@ -231,11 +232,10 @@
 ;; while
 (define test5
   '(vars []
-         (while true
+         (while (and true true)
                 (print "test1")
                 (print "test2")
                 )))
-
 
 ;(compile-simpl test5)
 
