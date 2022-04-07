@@ -7,7 +7,7 @@
 ; Student ID: aracharl
 ; Student Number: 20951238
 
-(define fun-ht (make-hash))
+(define fun-ht (make-hash)) ; stores functions like so: { function-name: number of parameters }
 
 ; (compile-simpl s-code)
 ; takes in code in SIMPL-F and compiles
